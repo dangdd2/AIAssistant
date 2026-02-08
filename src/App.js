@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import './App.css';
+import { supabase } from './supabaseClient';
 
 function App() {
   const [messages, setMessages] = useState([]);
@@ -10,16 +11,22 @@ function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [uploadedFiles, setUploadedFiles] = useState([]);
   const [uploadedImages, setUploadedImages] = useState([]);
+  
+  const [userId, setUserId] = useState(() => {
+    // Generate or load user ID from localStorage
+    let id = localStorage.getItem('user_id');
+    if (!id) {
+      id = 'user_' + Math.random().toString(36).substring(7);
+      localStorage.setItem('user_id', id);
+    }
+    return id;
+  });
+
   const messagesEndRef = useRef(null);
   const fileInputRef = useRef(null);
 
-  // Load chat history from localStorage on mount
-  useEffect(() => {
-    const savedMessages = localStorage.getItem('ollama-chat-history');
-    if (savedMessages) {
-      setMessages(JSON.parse(savedMessages));
-    }
-    
+  // Load settings from localStorage on mount
+  useEffect(() => {    
     const savedUrl = localStorage.getItem('ollama-url');
     if (savedUrl) {
       setOllamaUrl(savedUrl);
@@ -31,12 +38,76 @@ function App() {
     }
   }, []);
 
-  // Save messages to localStorage whenever they change
+  // Load chat history from Supabase
   useEffect(() => {
-    if (messages.length > 0) {
+    const loadMessagesFromSupabase = async () => {
+      try {
+        console.log('🔍 Loading messages for user:', userId);
+        
+        const { data, error } = await supabase
+          .from('conversations')
+          .select('messages')
+          .eq('user_id', userId)
+          .single();
+
+        if (error) {
+          if (error.code === 'PGRST116') {
+            console.log('📭 No existing conversation - starting fresh');
+            return;
+          }
+          throw error;
+        }
+
+        if (data && data.messages) {
+          console.log('✅ Loaded from Supabase:', data.messages.length, 'messages');
+          setMessages(data.messages);
+        }
+      } catch (error) {
+        console.error('❌ Error loading from Supabase:', error);
+        console.log('📦 Trying localStorage fallback...');
+        
+        // Fallback to localStorage
+        const savedMessages = localStorage.getItem('ollama-chat-history');
+        if (savedMessages) {
+          console.log('✅ Loaded from localStorage');
+          setMessages(JSON.parse(savedMessages));
+        }
+      }
+    };
+
+    loadMessagesFromSupabase();
+  }, [userId]);
+
+
+  // Save messages to localStorage AND Supabase
+  useEffect(() => {
+    const saveMessages = async () => {
+      if (messages.length === 0) return;
+
+      // Backup to localStorage
       localStorage.setItem('ollama-chat-history', JSON.stringify(messages));
-    }
-  }, [messages]);
+
+      // Save to Supabase
+      try {
+        const { error } = await supabase
+          .from('conversations')
+          .upsert({
+            user_id: userId,
+            messages: messages,
+            updated_at: new Date().toISOString()
+          }, {
+            onConflict: 'user_id'
+          });
+
+        if (error) throw error;
+        console.log('💾 Saved to Supabase:', messages.length, 'messages');
+      } catch (error) {
+        console.error('❌ Error saving to Supabase:', error.message);
+      }
+    };
+
+    saveMessages();
+  }, [messages, userId]);
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -148,10 +219,23 @@ function App() {
     }
   };
 
-  const clearHistory = () => {
-    if (window.confirm('Clear all chat history?')) {
+  const clearHistory = async () => {
+    if (window.confirm('Clear all chat history? This will delete from cloud as well.')) {
       setMessages([]);
       localStorage.removeItem('ollama-chat-history');
+      
+      // Delete from Supabase
+      try {
+        const { error } = await supabase
+          .from('conversations')
+          .delete()
+          .eq('user_id', userId);
+        
+        if (error) throw error;
+        console.log('🗑️ Cleared from Supabase');
+      } catch (error) {
+        console.error('❌ Error clearing Supabase:', error.message);
+      }
     }
   };
 
