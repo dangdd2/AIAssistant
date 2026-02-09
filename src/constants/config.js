@@ -8,6 +8,9 @@ export const STORAGE_KEYS = {
   OLLAMA_MODEL: 'ollama-model',
   CHAT_HISTORY: 'ollama-chat-history',
   USER_ID: 'user_id',
+  ACTIVE_CHAT_ID: 'ollama-active-chat-id',
+  CHAT_CONVERSATION_PREFIX: 'ollama-conv-',
+  CHAT_CONVERSATION_IDS: 'ollama-conv-ids',
 };
 
 // Supported file types

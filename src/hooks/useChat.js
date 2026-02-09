@@ -1,70 +1,90 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { getUserId, getLocalChatHistory, saveLocalChatHistory, clearLocalChatHistory } from '../utils/storage';
-import { loadMessages, saveMessages, deleteMessages } from '../services/supabaseService';
+import {
+  getUserId,
+  getLocalConversation,
+  saveLocalConversation,
+} from '../utils/storage';
+import { loadConversation, saveConversation } from '../services/supabaseService';
 import { buildConversationHistory, sendChatMessage } from '../services/ollamaService';
+import { conversationTitleFromMessages } from '../utils/formatters';
 
 /**
- * Custom hook for managing chat state and operations
+ * Custom hook for managing chat state for one conversation
  * @param {string} ollamaUrl - Ollama server URL
  * @param {string} modelName - Model name
+ * @param {string|null} conversationId - Active conversation ID (null = no conversation selected)
  * @param {Array} uploadedFiles - Uploaded text files
  * @param {Array} uploadedImages - Uploaded images
+ * @param {function(string): void} onDeleteConversation - Called after current conversation is deleted (parent should switch chat)
+ * @param {function(string, string): void} onTitleChange - Optional; called when conversation title is derived from messages (id, title)
  * @returns {object} Chat state and handlers
  */
-export const useChat = (ollamaUrl, modelName, uploadedFiles, uploadedImages) => {
+export const useChat = (
+  ollamaUrl,
+  modelName,
+  conversationId,
+  uploadedFiles,
+  uploadedImages,
+  onDeleteConversation,
+  onTitleChange
+) => {
   const [messages, setMessages] = useState([]);
   const [inputMessage, setInputMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [userId] = useState(getUserId);
   const messagesEndRef = useRef(null);
+  // Ref: which conversationId the current `messages` state belongs to (prevents saving old messages to new chat)
+  const messagesForConversationIdRef = useRef(null);
 
-  // Load chat history from Supabase on mount
+  // Load conversation when conversationId changes
   useEffect(() => {
-    const loadChatHistory = async () => {
+    if (!conversationId) {
+      setMessages([]);
+      messagesForConversationIdRef.current = null;
+      return;
+    }
+
+    // Clear immediately and mark as "not yet loaded for this id" so save effect won't write old messages to new conversation
+    setMessages([]);
+    messagesForConversationIdRef.current = null;
+
+    const load = async () => {
       try {
-        console.log('🔍 Loading messages for user:', userId);
-        const cloudMessages = await loadMessages(userId);
-
-        if (cloudMessages) {
-          console.log('✅ Loaded from Supabase:', cloudMessages.length, 'messages');
-          setMessages(cloudMessages);
-        } else {
-          console.log('📭 No existing conversation - starting fresh');
-        }
-      } catch (error) {
-        console.error('❌ Error loading from Supabase:', error);
-        console.log('📦 Trying localStorage fallback...');
-
-        const localMessages = getLocalChatHistory();
-        if (localMessages.length > 0) {
-          console.log('✅ Loaded from localStorage');
-          setMessages(localMessages);
-        }
+        const data = await loadConversation(userId, conversationId);
+        const msgs = data?.messages ?? [];
+        setMessages(msgs);
+        messagesForConversationIdRef.current = conversationId;
+      } catch (err) {
+        console.error('Error loading conversation:', err);
+        const local = getLocalConversation(conversationId);
+        const msgs = local?.messages ?? [];
+        setMessages(msgs);
+        messagesForConversationIdRef.current = conversationId;
       }
     };
 
-    loadChatHistory();
-  }, [userId]);
+    load();
+  }, [userId, conversationId]);
 
-  // Save messages to localStorage AND Supabase
+  // Save messages to this conversation only when they belong to it (Supabase + localStorage)
   useEffect(() => {
-    const persistMessages = async () => {
-      if (messages.length === 0) return;
+    if (!conversationId || messages.length === 0) return;
+    if (messagesForConversationIdRef.current !== conversationId) return;
 
-      // Backup to localStorage
-      saveLocalChatHistory(messages);
+    const title = conversationTitleFromMessages(messages);
 
-      // Save to Supabase
-      try {
-        await saveMessages(userId, messages);
-        console.log('💾 Saved to Supabase:', messages.length, 'messages');
-      } catch (error) {
-        console.error('❌ Error saving to Supabase:', error.message);
-      }
-    };
+    saveLocalConversation(conversationId, {
+      title,
+      messages,
+      updatedAt: new Date().toISOString(),
+    });
 
-    persistMessages();
-  }, [messages, userId]);
+    if (typeof onTitleChange === 'function') onTitleChange(conversationId, title);
+
+    saveConversation(userId, conversationId, title, messages).catch((err) =>
+      console.error('Error saving conversation:', err)
+    );
+  }, [userId, conversationId, messages, onTitleChange]);
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -94,10 +114,6 @@ export const useChat = (ollamaUrl, modelName, uploadedFiles, uploadedImages) => 
         uploadedFiles,
         uploadedImages
       );
-
-      console.log('Sending request to:', `${ollamaUrl}/api/chat`);
-      console.log('With model:', modelName);
-      console.log('Message count:', conversationHistory.length);
 
       const responseContent = await sendChatMessage(ollamaUrl, modelName, conversationHistory);
 
@@ -132,19 +148,11 @@ export const useChat = (ollamaUrl, modelName, uploadedFiles, uploadedImages) => 
     [sendMessage]
   );
 
-  const clearHistory = useCallback(async () => {
-    if (window.confirm('Clear all chat history? This will delete from cloud as well.')) {
-      setMessages([]);
-      clearLocalChatHistory();
-
-      try {
-        await deleteMessages(userId);
-        console.log('🗑️ Cleared from Supabase');
-      } catch (error) {
-        console.error('❌ Error clearing Supabase:', error.message);
-      }
-    }
-  }, [userId]);
+  const deleteCurrentChat = useCallback(() => {
+    if (!conversationId) return;
+    if (!window.confirm('Delete this chat? This cannot be undone.')) return;
+    if (typeof onDeleteConversation === 'function') onDeleteConversation(conversationId);
+  }, [conversationId, onDeleteConversation]);
 
   return {
     messages,
@@ -154,7 +162,7 @@ export const useChat = (ollamaUrl, modelName, uploadedFiles, uploadedImages) => 
     messagesEndRef,
     sendMessage,
     handleKeyPress,
-    clearHistory,
+    clearHistory: deleteCurrentChat,
     addMessage,
   };
 };

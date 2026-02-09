@@ -1,9 +1,106 @@
 import { supabase } from './supabaseClient';
 
+// --- Multi-chat: one row per conversation (id, user_id, title, messages, updated_at) ---
+
 /**
- * Load messages from Supabase for a user
+ * List conversations for a user (id, title, updated_at), newest first
  * @param {string} userId - User ID
- * @returns {Promise<Array|null>} Messages array or null if not found
+ * @returns {Promise<Array<{ id: string, title: string, updated_at: string }>>}
+ */
+export const listConversations = async (userId) => {
+  const { data, error } = await supabase
+    .from('conversations')
+    .select('id, title, updated_at')
+    .eq('user_id', userId)
+    .order('updated_at', { ascending: false });
+
+  if (error) throw error;
+  return data || [];
+};
+
+/**
+ * Load one conversation's messages and title
+ * @param {string} userId - User ID
+ * @param {string} conversationId - Conversation UUID
+ * @returns {Promise<{ messages: Array, title: string }|null>}
+ */
+export const loadConversation = async (userId, conversationId) => {
+  const { data, error } = await supabase
+    .from('conversations')
+    .select('messages, title')
+    .eq('user_id', userId)
+    .eq('id', conversationId)
+    .single();
+
+  if (error) {
+    if (error.code === 'PGRST116') return null;
+    throw error;
+  }
+  return data ? { messages: data.messages || [], title: data.title || 'New chat' } : null;
+};
+
+/**
+ * Save (upsert) one conversation by id
+ * @param {string} userId - User ID
+ * @param {string} conversationId - Conversation UUID
+ * @param {string} title - Conversation title
+ * @param {Array} messages - Messages array
+ */
+export const saveConversation = async (userId, conversationId, title, messages) => {
+  const { error } = await supabase
+    .from('conversations')
+    .upsert(
+      {
+        id: conversationId,
+        user_id: userId,
+        title: title || 'New chat',
+        messages: messages || [],
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'id' }
+    );
+
+  if (error) throw error;
+};
+
+/**
+ * Update only the title (and updated_at) of a conversation
+ * @param {string} userId - User ID
+ * @param {string} conversationId - Conversation UUID
+ * @param {string} title - New title
+ */
+export const updateConversationTitle = async (userId, conversationId, title) => {
+  const { error } = await supabase
+    .from('conversations')
+    .update({
+      title: title || 'New chat',
+      updated_at: new Date().toISOString(),
+    })
+    .eq('user_id', userId)
+    .eq('id', conversationId);
+
+  if (error) throw error;
+};
+
+/**
+ * Delete one conversation
+ * @param {string} userId - User ID
+ * @param {string} conversationId - Conversation UUID
+ */
+export const deleteConversation = async (userId, conversationId) => {
+  const { error } = await supabase
+    .from('conversations')
+    .delete()
+    .eq('user_id', userId)
+    .eq('id', conversationId);
+
+  if (error) throw error;
+};
+
+// --- Legacy (single conversation per user); kept for reference / migration ---
+
+/**
+ * @deprecated Use loadConversation(userId, conversationId) for multi-chat
  */
 export const loadMessages = async (userId) => {
   const { data, error } = await supabase
@@ -13,10 +110,7 @@ export const loadMessages = async (userId) => {
     .single();
 
   if (error) {
-    if (error.code === 'PGRST116') {
-      // No existing conversation
-      return null;
-    }
+    if (error.code === 'PGRST116') return null;
     throw error;
   }
 
@@ -24,9 +118,7 @@ export const loadMessages = async (userId) => {
 };
 
 /**
- * Save messages to Supabase
- * @param {string} userId - User ID
- * @param {Array} messages - Messages array
+ * @deprecated Use saveConversation(userId, conversationId, title, messages) for multi-chat
  */
 export const saveMessages = async (userId, messages) => {
   const { error } = await supabase
@@ -44,8 +136,7 @@ export const saveMessages = async (userId, messages) => {
 };
 
 /**
- * Delete all messages for a user
- * @param {string} userId - User ID
+ * @deprecated Use deleteConversation(userId, conversationId) for multi-chat
  */
 export const deleteMessages = async (userId) => {
   const { error } = await supabase
