@@ -88,7 +88,7 @@ const ChatHeader = ({
         <button
           className="icon-button"
           onClick={onClearHistory}
-          title="Clear History"
+          title="Delete this chat"
         >
           🗑️
         </button>

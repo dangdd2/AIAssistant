@@ -3,16 +3,16 @@ import './App.css';
 
 // Components
 import { ChatHeader, ChatInput, MessageList } from './components/Chat';
+import { Sidebar } from './components/Sidebar';
 import { SettingsPanel } from './components/Settings';
 import { UploadsPanel } from './components/Uploads';
 
 // Hooks
-import { useChat, useSettings } from './hooks';
+import { useChat, useConversations, useSettings } from './hooks';
 import { SUPPORTED_FILE_TYPES } from './constants/config';
 import { saveSettings as persistSettingsToStorage } from './utils/storage';
 
 function App() {
-  // Settings hook
   const {
     ollamaUrl,
     setOllamaUrl,
@@ -23,12 +23,27 @@ function App() {
     saveSettings,
   } = useSettings();
 
-  // File upload state (managed here to avoid circular dependency)
+  const {
+    conversations,
+    activeConversationId,
+    setConversationTitle,
+    renameConversation,
+    newChat,
+    selectChat,
+    deleteChat,
+  } = useConversations();
+
   const [uploadedFiles, setUploadedFiles] = useState([]);
   const [uploadedImages, setUploadedImages] = useState([]);
   const fileInputRef = useRef(null);
 
-  // Chat hook with file uploads
+  const handleDeleteConversation = useCallback(
+    (id) => {
+      deleteChat(id);
+    },
+    [deleteChat]
+  );
+
   const {
     messages,
     inputMessage,
@@ -39,9 +54,16 @@ function App() {
     handleKeyPress,
     clearHistory,
     addMessage,
-  } = useChat(ollamaUrl, modelName, uploadedFiles, uploadedImages);
+  } = useChat(
+    ollamaUrl,
+    modelName,
+    activeConversationId,
+    uploadedFiles,
+    uploadedImages,
+    handleDeleteConversation,
+    setConversationTitle
+  );
 
-  // File upload handlers
   const handleFileUpload = useCallback(
     async (e) => {
       const files = Array.from(e.target.files);
@@ -114,54 +136,64 @@ function App() {
 
   return (
     <div className="App">
-      <div className="chat-container">
-        <ChatHeader
-          ollamaUrl={ollamaUrl}
-          modelName={modelName}
-          onModelChange={(name) => {
-            setModelName(name);
-            persistSettingsToStorage(ollamaUrl, name);
-          }}
-          fileInputRef={fileInputRef}
-          onFileUpload={handleFileUpload}
-          onTriggerFileInput={triggerFileInput}
-          onClearUploads={clearUploads}
-          onToggleSettings={toggleSettings}
-          onClearHistory={clearHistory}
-          hasUploads={hasUploads}
-        />
-
-        {showSettings && (
-          <SettingsPanel
+      <Sidebar
+        conversations={conversations}
+        activeConversationId={activeConversationId}
+        onNewChat={newChat}
+        onSelectChat={selectChat}
+        onDeleteChat={deleteChat}
+        onRenameChat={renameConversation}
+      />
+      <div className="chat-main">
+        <div className="chat-container">
+          <ChatHeader
             ollamaUrl={ollamaUrl}
-            setOllamaUrl={setOllamaUrl}
             modelName={modelName}
-            setModelName={setModelName}
-            onSave={saveSettings}
+            onModelChange={(name) => {
+              setModelName(name);
+              persistSettingsToStorage(ollamaUrl, name);
+            }}
+            fileInputRef={fileInputRef}
+            onFileUpload={handleFileUpload}
+            onTriggerFileInput={triggerFileInput}
+            onClearUploads={clearUploads}
+            onToggleSettings={toggleSettings}
+            onClearHistory={clearHistory}
+            hasUploads={hasUploads}
           />
-        )}
 
-        {hasUploads && (
-          <UploadsPanel
-            uploadedFiles={uploadedFiles}
-            uploadedImages={uploadedImages}
-            totalUploads={totalUploads}
+          {showSettings && (
+            <SettingsPanel
+              ollamaUrl={ollamaUrl}
+              setOllamaUrl={setOllamaUrl}
+              modelName={modelName}
+              setModelName={setModelName}
+              onSave={saveSettings}
+            />
+          )}
+
+          {hasUploads && (
+            <UploadsPanel
+              uploadedFiles={uploadedFiles}
+              uploadedImages={uploadedImages}
+              totalUploads={totalUploads}
+            />
+          )}
+
+          <MessageList
+            messages={messages}
+            isLoading={isLoading}
+            messagesEndRef={messagesEndRef}
           />
-        )}
 
-        <MessageList
-          messages={messages}
-          isLoading={isLoading}
-          messagesEndRef={messagesEndRef}
-        />
-
-        <ChatInput
-          inputMessage={inputMessage}
-          setInputMessage={setInputMessage}
-          onKeyPress={handleKeyPress}
-          onSend={sendMessage}
-          isLoading={isLoading}
-        />
+          <ChatInput
+            inputMessage={inputMessage}
+            setInputMessage={setInputMessage}
+            onKeyPress={handleKeyPress}
+            onSend={sendMessage}
+            isLoading={isLoading}
+          />
+        </div>
       </div>
     </div>
   );

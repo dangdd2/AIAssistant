@@ -1,5 +1,7 @@
 import { STORAGE_KEYS, DEFAULT_OLLAMA_URL, DEFAULT_MODEL_NAME } from '../constants/config';
 
+const { CHAT_CONVERSATION_PREFIX, CHAT_CONVERSATION_IDS, ACTIVE_CHAT_ID } = STORAGE_KEYS;
+
 /**
  * Generate or retrieve user ID from localStorage
  * @returns {string} User ID
@@ -61,4 +63,67 @@ export const saveLocalChatHistory = (messages) => {
  */
 export const clearLocalChatHistory = () => {
   localStorage.removeItem(STORAGE_KEYS.CHAT_HISTORY);
+};
+
+// --- Multi-chat (conversations) localStorage fallback ---
+
+/**
+ * Get list of conversation ids from localStorage
+ * @returns {string[]}
+ */
+export const getLocalConversationIds = () => {
+  const raw = localStorage.getItem(CHAT_CONVERSATION_IDS);
+  return raw ? JSON.parse(raw) : [];
+};
+
+/**
+ * Save list of conversation ids to localStorage
+ * @param {string[]} ids
+ */
+export const setLocalConversationIds = (ids) => {
+  localStorage.setItem(CHAT_CONVERSATION_IDS, JSON.stringify(ids));
+};
+
+/**
+ * Get active conversation id from localStorage
+ * @returns {string|null}
+ */
+export const getActiveConversationId = () => {
+  return localStorage.getItem(ACTIVE_CHAT_ID);
+};
+
+/**
+ * Set active conversation id in localStorage
+ * @param {string|null} id
+ */
+export const setActiveConversationId = (id) => {
+  if (id) localStorage.setItem(ACTIVE_CHAT_ID, id);
+  else localStorage.removeItem(ACTIVE_CHAT_ID);
+};
+
+/**
+ * Get one conversation from localStorage (title, messages, updatedAt)
+ * @param {string} id
+ * @returns {{ title: string, messages: Array, updatedAt: string }|null}
+ */
+export const getLocalConversation = (id) => {
+  const raw = localStorage.getItem(CHAT_CONVERSATION_PREFIX + id);
+  return raw ? JSON.parse(raw) : null;
+};
+
+/**
+ * Save one conversation to localStorage
+ * @param {string} id
+ * @param {{ title: string, messages: Array, updatedAt: string }} data
+ */
+export const saveLocalConversation = (id, data) => {
+  localStorage.setItem(CHAT_CONVERSATION_PREFIX + id, JSON.stringify(data));
+};
+
+/**
+ * Remove one conversation from localStorage
+ * @param {string} id
+ */
+export const deleteLocalConversation = (id) => {
+  localStorage.removeItem(CHAT_CONVERSATION_PREFIX + id);
 };

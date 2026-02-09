@@ -24,3 +24,19 @@ export const getRoleDisplay = (role) => {
   };
   return displays[role] || displays.assistant;
 };
+
+const DEFAULT_CHAT_TITLE = 'New chat';
+const TITLE_MAX_LEN = 50;
+
+/**
+ * Derive conversation title from messages (first user message, truncated)
+ * @param {Array} messages
+ * @returns {string}
+ */
+export const conversationTitleFromMessages = (messages) => {
+  const firstUser = (messages || []).find((m) => m.role === 'user');
+  if (!firstUser || !firstUser.content) return DEFAULT_CHAT_TITLE;
+  const text = String(firstUser.content).trim();
+  if (!text) return DEFAULT_CHAT_TITLE;
+  return text.length <= TITLE_MAX_LEN ? text : text.slice(0, TITLE_MAX_LEN) + '…';
+};
