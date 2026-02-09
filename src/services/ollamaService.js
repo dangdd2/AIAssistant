@@ -1,4 +1,24 @@
 /**
+ * List available models from Ollama API
+ * @param {string} ollamaUrl - Ollama server URL
+ * @returns {Promise<Array<{name: string}>>} Array of models (each with .name)
+ */
+export const listModels = async (ollamaUrl) => {
+  try {
+    const response = await fetch(`${ollamaUrl}/api/tags`, {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+    });
+    if (!response.ok) return [];
+    const data = await response.json();
+    const models = data?.models ?? [];
+    return models.map((m) => ({ name: m.name ?? m.model ?? '' })).filter((m) => m.name);
+  } catch {
+    return [];
+  }
+};
+
+/**
  * Build conversation history for Ollama API
  * @param {Array} messages - Current messages
  * @param {Array} uploadedFiles - Uploaded text files

@@ -9,6 +9,7 @@ import { UploadsPanel } from './components/Uploads';
 // Hooks
 import { useChat, useSettings } from './hooks';
 import { SUPPORTED_FILE_TYPES } from './constants/config';
+import { saveSettings as persistSettingsToStorage } from './utils/storage';
 
 function App() {
   // Settings hook
@@ -115,7 +116,12 @@ function App() {
     <div className="App">
       <div className="chat-container">
         <ChatHeader
+          ollamaUrl={ollamaUrl}
           modelName={modelName}
+          onModelChange={(name) => {
+            setModelName(name);
+            persistSettingsToStorage(ollamaUrl, name);
+          }}
           fileInputRef={fileInputRef}
           onFileUpload={handleFileUpload}
           onTriggerFileInput={triggerFileInput}
