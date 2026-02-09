@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import './App.css';
 
 // Components
@@ -10,7 +10,8 @@ import { UploadsPanel } from './components/Uploads';
 // Hooks
 import { useChat, useConversations, useSettings } from './hooks';
 import { SUPPORTED_FILE_TYPES } from './constants/config';
-import { saveSettings as persistSettingsToStorage } from './utils/storage';
+import { saveSettings as persistSettingsToStorage, getUserId } from './utils/storage';
+import { updateConversationModel } from './services/supabaseService';
 
 function App() {
   const {
@@ -27,11 +28,19 @@ function App() {
     conversations,
     activeConversationId,
     setConversationTitle,
+    setConversationModel,
     renameConversation,
     newChat,
     selectChat,
     deleteChat,
   } = useConversations();
+
+  // Sync global model from the active conversation when switching chats or list updates
+  useEffect(() => {
+    if (!activeConversationId || !conversations.length) return;
+    const active = conversations.find((c) => c.id === activeConversationId);
+    if (active?.model != null) setModelName(active.model);
+  }, [activeConversationId, conversations, setModelName]);
 
   const [uploadedFiles, setUploadedFiles] = useState([]);
   const [uploadedImages, setUploadedImages] = useState([]);
@@ -63,6 +72,35 @@ function App() {
     handleDeleteConversation,
     setConversationTitle
   );
+
+  const handleSelectChat = useCallback(
+    (conv) => {
+      selectChat(conv.id);
+      if (conv.model != null) {
+        setModelName(conv.model);
+        persistSettingsToStorage(ollamaUrl, conv.model);
+      }
+    },
+    [selectChat, setModelName, ollamaUrl]
+  );
+
+  const handleModelChange = useCallback(
+    (name) => {
+      setModelName(name);
+      persistSettingsToStorage(ollamaUrl, name);
+      if (activeConversationId) {
+        setConversationModel(activeConversationId, name);
+        updateConversationModel(getUserId(), activeConversationId, name).catch((err) =>
+          console.error('Error updating conversation model:', err)
+        );
+      }
+    },
+    [setModelName, ollamaUrl, activeConversationId, setConversationModel]
+  );
+
+  const handleNewChat = useCallback(() => {
+    newChat(modelName);
+  }, [newChat, modelName]);
 
   const handleFileUpload = useCallback(
     async (e) => {
@@ -131,16 +169,75 @@ function App() {
     fileInputRef.current?.click();
   }, []);
 
+  const handlePaste = useCallback(
+    (e) => {
+      const clipboard = e.clipboardData;
+      if (!clipboard) return;
+
+      // Prefer files array when available (better support across browsers)
+      const files = clipboard.files && clipboard.files.length ? clipboard.files : null;
+      if (files) {
+        for (const file of files) {
+          if (file.type && file.type.startsWith('image/')) {
+            e.preventDefault();
+            const reader = new FileReader();
+            reader.onload = (event) => {
+              const base64Image = event.target.result.split(',')[1];
+              setUploadedImages((prev) => [
+                ...prev,
+                { name: file.name || 'pasted-image.png', data: base64Image, type: file.type },
+              ]);
+              addMessage({
+                role: 'system',
+                content: '📷 Image pasted (screenshot or clipboard)',
+                timestamp: new Date().toISOString(),
+              });
+            };
+            reader.readAsDataURL(file);
+            return;
+          }
+        }
+      }
+
+      // Fallback to items API
+      const items = clipboard.items;
+      if (!items) return;
+      for (const item of items) {
+        if (item.type && item.type.startsWith('image/')) {
+          e.preventDefault();
+          const file = item.getAsFile();
+          if (!file) continue;
+          const reader = new FileReader();
+          reader.onload = (event) => {
+            const base64Image = event.target.result.split(',')[1];
+            setUploadedImages((prev) => [
+              ...prev,
+              { name: file.name || 'pasted-image.png', data: base64Image, type: file.type },
+            ]);
+            addMessage({
+              role: 'system',
+              content: '📷 Image pasted (screenshot or clipboard)',
+              timestamp: new Date().toISOString(),
+            });
+          };
+          reader.readAsDataURL(file);
+          return;
+        }
+      }
+    },
+    [addMessage]
+  );
+
   const hasUploads = uploadedFiles.length > 0 || uploadedImages.length > 0;
   const totalUploads = uploadedFiles.length + uploadedImages.length;
 
   return (
-    <div className="App">
+    <div className="App" onPasteCapture={handlePaste}>
       <Sidebar
         conversations={conversations}
         activeConversationId={activeConversationId}
-        onNewChat={newChat}
-        onSelectChat={selectChat}
+        onNewChat={handleNewChat}
+        onSelectChat={handleSelectChat}
         onDeleteChat={deleteChat}
         onRenameChat={renameConversation}
       />
@@ -149,10 +246,7 @@ function App() {
           <ChatHeader
             ollamaUrl={ollamaUrl}
             modelName={modelName}
-            onModelChange={(name) => {
-              setModelName(name);
-              persistSettingsToStorage(ollamaUrl, name);
-            }}
+            onModelChange={handleModelChange}
             fileInputRef={fileInputRef}
             onFileUpload={handleFileUpload}
             onTriggerFileInput={triggerFileInput}

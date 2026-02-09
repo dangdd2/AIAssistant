@@ -86,7 +86,7 @@ const Sidebar = ({
                 <button
                   type="button"
                   className="sidebar-item-button"
-                  onClick={() => onSelectChat(conv.id)}
+                  onClick={() => onSelectChat(conv)}
                   onDoubleClick={(e) => startEditing(e, conv)}
                   title={`${conv.title || 'New chat'} — double-click to rename`}
                 >
