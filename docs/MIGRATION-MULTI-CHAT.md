@@ -12,6 +12,7 @@ Table: `conversations`
 | `user_id`   | TEXT         | User identifier                |
 | `title`     | TEXT         | Conversation title             |
 | `messages`  | JSONB        | Array of messages              |
+| `model`     | TEXT         | Model name for this chat (optional) |
 | `updated_at`| TIMESTAMPTZ  | Last updated                   |
 
 - **Primary key:** `id`
@@ -30,10 +31,12 @@ CREATE TABLE IF NOT EXISTS conversations (
   user_id TEXT NOT NULL,
   title TEXT DEFAULT 'New chat',
   messages JSONB DEFAULT '[]',
+  model TEXT,
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_conversations_user_updated
+DROP INDEX IF EXISTS idx_conversations_user_updated;
+CREATE INDEX idx_conversations_user_updated
   ON conversations (user_id, updated_at DESC);
 
 -- RLS (optional): allow users to read/write only their rows
@@ -61,15 +64,17 @@ CREATE TABLE conversations (
   user_id TEXT NOT NULL,
   title TEXT DEFAULT 'New chat',
   messages JSONB DEFAULT '[]',
+  model TEXT,
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+DROP INDEX IF EXISTS idx_conversations_user_updated;
 CREATE INDEX idx_conversations_user_updated
   ON conversations (user_id, updated_at DESC);
 
 -- 3) Copy existing data (one row per user -> one row per user with new id)
-INSERT INTO conversations (id, user_id, title, messages, updated_at)
-SELECT gen_random_uuid(), user_id, 'Chat', messages, COALESCE(updated_at, NOW())
+INSERT INTO conversations (id, user_id, title, messages, model, updated_at)
+SELECT gen_random_uuid(), user_id, 'Chat', messages, NULL, COALESCE(updated_at, NOW())
 FROM conversations_old;
 
 -- 4) Drop old table
@@ -77,3 +82,21 @@ DROP TABLE conversations_old;
 ```
 
 After running the migration, the app will use `listConversations`, `loadConversation`, `saveConversation`, and `deleteConversation` against this new schema.
+
+### Adding `model` to an existing multi-chat table
+
+If you already have the `conversations` table with `id`, `user_id`, `title`, `messages`, `updated_at` and want to add per-chat model:
+
+```sql
+ALTER TABLE conversations ADD COLUMN IF NOT EXISTS model TEXT;
+```
+
+### Fixing index already exists error
+
+If you get `ERROR: relation "idx_conversations_user_updated" already exists`, run this to drop and recreate it:
+
+```sql
+DROP INDEX IF EXISTS idx_conversations_user_updated;
+CREATE INDEX idx_conversations_user_updated
+  ON conversations (user_id, updated_at DESC);
+```

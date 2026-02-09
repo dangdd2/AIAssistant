@@ -12,7 +12,9 @@ import {
   saveLocalConversation,
   getLocalConversation,
   deleteLocalConversation,
+  getSavedModelName,
 } from '../utils/storage';
+import { DEFAULT_MODEL_NAME } from '../constants/config';
 
 const DEFAULT_TITLE = 'New chat';
 
@@ -48,15 +50,26 @@ export const useConversations = () => {
 
   useEffect(() => {
     let mounted = true;
+    const defaultModel = getSavedModelName() || DEFAULT_MODEL_NAME;
     const createFirstConversation = async () => {
       const id = crypto.randomUUID();
-      const entry = { id, title: DEFAULT_TITLE, updated_at: new Date().toISOString() };
+      const entry = {
+        id,
+        title: DEFAULT_TITLE,
+        updated_at: new Date().toISOString(),
+        model: defaultModel,
+      };
       try {
-        await saveConversation(userId, id, DEFAULT_TITLE, []);
+        await saveConversation(userId, id, DEFAULT_TITLE, [], defaultModel);
       } catch (err) {
         console.error('Error creating first conversation:', err);
       }
-      saveLocalConversation(id, { title: DEFAULT_TITLE, messages: [], updatedAt: entry.updated_at });
+      saveLocalConversation(id, {
+        title: DEFAULT_TITLE,
+        messages: [],
+        updatedAt: entry.updated_at,
+        model: defaultModel,
+      });
       const localIds = getLocalConversationIds();
       if (!localIds.includes(id)) setLocalConversationIds([id, ...localIds]);
       if (!mounted) return;
@@ -89,6 +102,7 @@ export const useConversations = () => {
               id,
               title: DEFAULT_TITLE,
               updated_at: new Date().toISOString(),
+              model: null,
             }))
           );
           const activeId = getActiveConversationId() || localIds[0];
@@ -105,24 +119,38 @@ export const useConversations = () => {
     };
   }, [userId]);
 
-  const newChat = useCallback(async () => {
-    const id = crypto.randomUUID();
-    const entry = { id, title: DEFAULT_TITLE, updated_at: new Date().toISOString() };
-    try {
-      await saveConversation(userId, id, DEFAULT_TITLE, []);
-    } catch (err) {
-      console.error('Error creating conversation:', err);
-    }
-    saveLocalConversation(id, { title: DEFAULT_TITLE, messages: [], updatedAt: entry.updated_at });
-    const localIds = getLocalConversationIds();
-    if (!localIds.includes(id)) {
-      setLocalConversationIds([id, ...localIds]);
-    }
-    setConversations((prev) => [entry, ...prev]);
-    setActiveIdState(id);
-    setActiveConversationId(id);
-    return id;
-  }, [userId]);
+  const newChat = useCallback(
+    async (currentModel) => {
+      const model = currentModel || getSavedModelName() || DEFAULT_MODEL_NAME;
+      const id = crypto.randomUUID();
+      const entry = {
+        id,
+        title: DEFAULT_TITLE,
+        updated_at: new Date().toISOString(),
+        model,
+      };
+      try {
+        await saveConversation(userId, id, DEFAULT_TITLE, [], model);
+      } catch (err) {
+        console.error('Error creating conversation:', err);
+      }
+      saveLocalConversation(id, {
+        title: DEFAULT_TITLE,
+        messages: [],
+        updatedAt: entry.updated_at,
+        model,
+      });
+      const localIds = getLocalConversationIds();
+      if (!localIds.includes(id)) {
+        setLocalConversationIds([id, ...localIds]);
+      }
+      setConversations((prev) => [entry, ...prev]);
+      setActiveIdState(id);
+      setActiveConversationId(id);
+      return id;
+    },
+    [userId]
+  );
 
   const selectChat = useCallback((id) => {
     setActiveIdState(id);
@@ -163,6 +191,12 @@ export const useConversations = () => {
     );
   }, []);
 
+  const setConversationModel = useCallback((id, model) => {
+    setConversations((prev) =>
+      prev.map((c) => (c.id === id ? { ...c, model: model || null } : c))
+    );
+  }, []);
+
   const renameConversation = useCallback(
     async (id, title) => {
       const trimmed = (title || '').trim() || DEFAULT_TITLE;
@@ -191,6 +225,7 @@ export const useConversations = () => {
     activeConversationId,
     setActiveConversationId: setActiveConversationIdAndState,
     setConversationTitle,
+    setConversationModel,
     renameConversation,
     newChat,
     selectChat,

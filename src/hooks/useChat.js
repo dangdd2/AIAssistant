@@ -77,14 +77,15 @@ export const useChat = (
       title,
       messages,
       updatedAt: new Date().toISOString(),
+      model: modelName,
     });
 
     if (typeof onTitleChange === 'function') onTitleChange(conversationId, title);
 
-    saveConversation(userId, conversationId, title, messages).catch((err) =>
+    saveConversation(userId, conversationId, title, messages, modelName).catch((err) =>
       console.error('Error saving conversation:', err)
     );
-  }, [userId, conversationId, messages, onTitleChange]);
+  }, [userId, conversationId, messages, modelName, onTitleChange]);
 
   // Auto-scroll to bottom
   useEffect(() => {
