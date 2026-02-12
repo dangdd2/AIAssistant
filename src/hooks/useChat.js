@@ -110,6 +110,15 @@ export const useChat = (
     setIsLoading(true);
 
     try {
+      // Debug/visibility: confirm what's being attached (system messages aren't sent to Ollama)
+      if ((uploadedImages?.length ?? 0) > 0 || (uploadedFiles?.length ?? 0) > 0) {
+        addMessage({
+          role: 'system',
+          content: `📎 Sending with attachments: ${uploadedImages?.length ?? 0} image(s), ${uploadedFiles?.length ?? 0} document(s)`,
+          timestamp: new Date().toISOString(),
+        });
+      }
+
       const conversationHistory = buildConversationHistory(
         [...messages, userMessage],
         uploadedFiles,
@@ -137,7 +146,15 @@ export const useChat = (
     } finally {
       setIsLoading(false);
     }
-  }, [inputMessage, messages, ollamaUrl, modelName, uploadedFiles, uploadedImages]);
+  }, [
+    inputMessage,
+    messages,
+    ollamaUrl,
+    modelName,
+    uploadedFiles,
+    uploadedImages,
+    addMessage,
+  ]);
 
   const handleKeyPress = useCallback(
     (e) => {
