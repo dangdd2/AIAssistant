@@ -44,10 +44,17 @@ export const buildConversationHistory = (messages, uploadedFiles = [], uploadedI
     conversationHistory = [contextMessage, ...conversationHistory];
   }
 
-  // Add images to the last user message for vision models
+  // Add images to the last USER message for vision models (Ollama expects images on user messages)
   if (uploadedImages.length > 0 && conversationHistory.length > 0) {
-    const lastUserMsgIndex = conversationHistory.length - 1;
-    conversationHistory[lastUserMsgIndex].images = uploadedImages.map((img) => img.data);
+    const lastUserMsgIndex = (() => {
+      for (let i = conversationHistory.length - 1; i >= 0; i--) {
+        if (conversationHistory[i]?.role === 'user') return i;
+      }
+      return -1;
+    })();
+    if (lastUserMsgIndex >= 0) {
+      conversationHistory[lastUserMsgIndex].images = uploadedImages.map((img) => img.data);
+    }
   }
 
   return conversationHistory;
@@ -61,6 +68,19 @@ export const buildConversationHistory = (messages, uploadedFiles = [], uploadedI
  * @returns {Promise<string>} Assistant's response content
  */
 export const sendChatMessage = async (ollamaUrl, modelName, conversationHistory) => {
+  // Debug: help confirm images are actually in the payload
+  try {
+    const imagesCount = Array.isArray(conversationHistory)
+      ? conversationHistory.reduce((acc, m) => acc + (Array.isArray(m?.images) ? m.images.length : 0), 0)
+      : 0;
+    if (imagesCount > 0) {
+      // eslint-disable-next-line no-console
+      console.debug('[ollamaService] Sending chat with images:', { modelName, imagesCount });
+    }
+  } catch {
+    // ignore debug errors
+  }
+
   const response = await fetch(`${ollamaUrl}/api/chat`, {
     method: 'POST',
     headers: {

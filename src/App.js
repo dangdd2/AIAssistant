@@ -13,6 +13,9 @@ import { SUPPORTED_FILE_TYPES } from './constants/config';
 import { saveSettings as persistSettingsToStorage, getUserId } from './utils/storage';
 import { updateConversationModel } from './services/supabaseService';
 
+const isLikelyVisionModelName = (name = '') =>
+  /(vision|llava|bakllava|moondream|pixtral|\bvl\b|qwen.*vl|minicpm.*v|glm.*v)/i.test(name);
+
 function App() {
   const {
     ollamaUrl,
@@ -44,6 +47,7 @@ function App() {
 
   const [uploadedFiles, setUploadedFiles] = useState([]);
   const [uploadedImages, setUploadedImages] = useState([]);
+  const [pendingUploadCount, setPendingUploadCount] = useState(0);
   const fileInputRef = useRef(null);
 
   const handleDeleteConversation = useCallback(
@@ -108,6 +112,7 @@ function App() {
 
       for (const file of files) {
         if (file.type.startsWith('image/')) {
+          setPendingUploadCount((c) => c + 1);
           const reader = new FileReader();
           reader.onload = (event) => {
             const base64Image = event.target.result.split(',')[1];
@@ -120,12 +125,31 @@ function App() {
               content: `📷 Image uploaded: ${file.name}`,
               timestamp: new Date().toISOString(),
             });
+            if (!isLikelyVisionModelName(modelName)) {
+              addMessage({
+                role: 'system',
+                content:
+                  `⚠️ Current model "${modelName}" may not support image understanding. ` +
+                  'If it says no image is attached, switch to a vision model (e.g. llava, llama3.2-vision, qwen2.5-vl).',
+                timestamp: new Date().toISOString(),
+              });
+            }
+            setPendingUploadCount((c) => Math.max(0, c - 1));
+          };
+          reader.onerror = () => {
+            addMessage({
+              role: 'system',
+              content: `❌ Failed to read image: ${file.name}`,
+              timestamp: new Date().toISOString(),
+            });
+            setPendingUploadCount((c) => Math.max(0, c - 1));
           };
           reader.readAsDataURL(file);
         } else if (
           file.type === 'text/plain' ||
           SUPPORTED_FILE_TYPES.TEXT.some((ext) => file.name.endsWith(ext))
         ) {
+          setPendingUploadCount((c) => c + 1);
           const reader = new FileReader();
           reader.onload = (event) => {
             const content = event.target.result;
@@ -138,6 +162,15 @@ function App() {
               content: `📄 Document uploaded: ${file.name} (${content.length} characters)`,
               timestamp: new Date().toISOString(),
             });
+            setPendingUploadCount((c) => Math.max(0, c - 1));
+          };
+          reader.onerror = () => {
+            addMessage({
+              role: 'system',
+              content: `❌ Failed to read document: ${file.name}`,
+              timestamp: new Date().toISOString(),
+            });
+            setPendingUploadCount((c) => Math.max(0, c - 1));
           };
           reader.readAsText(file);
         } else if (file.type === 'application/pdf' || file.name.endsWith('.pdf')) {
@@ -152,12 +185,13 @@ function App() {
       }
       e.target.value = '';
     },
-    [addMessage]
+    [addMessage, modelName]
   );
 
   const clearUploads = useCallback(() => {
     setUploadedFiles([]);
     setUploadedImages([]);
+    setPendingUploadCount(0);
     addMessage({
       role: 'system',
       content: '🗑️ All uploaded files cleared',
@@ -180,6 +214,7 @@ function App() {
         for (const file of files) {
           if (file.type && file.type.startsWith('image/')) {
             e.preventDefault();
+            setPendingUploadCount((c) => c + 1);
             const reader = new FileReader();
             reader.onload = (event) => {
               const base64Image = event.target.result.split(',')[1];
@@ -192,6 +227,24 @@ function App() {
                 content: '📷 Image pasted (screenshot or clipboard)',
                 timestamp: new Date().toISOString(),
               });
+              if (!isLikelyVisionModelName(modelName)) {
+                addMessage({
+                  role: 'system',
+                  content:
+                    `⚠️ Current model "${modelName}" may not support image understanding. ` +
+                    'If it says no image is attached, switch to a vision model (e.g. llava, llama3.2-vision, qwen2.5-vl).',
+                  timestamp: new Date().toISOString(),
+                });
+              }
+              setPendingUploadCount((c) => Math.max(0, c - 1));
+            };
+            reader.onerror = () => {
+              addMessage({
+                role: 'system',
+                content: '❌ Failed to read pasted image',
+                timestamp: new Date().toISOString(),
+              });
+              setPendingUploadCount((c) => Math.max(0, c - 1));
             };
             reader.readAsDataURL(file);
             return;
@@ -207,6 +260,7 @@ function App() {
           e.preventDefault();
           const file = item.getAsFile();
           if (!file) continue;
+          setPendingUploadCount((c) => c + 1);
           const reader = new FileReader();
           reader.onload = (event) => {
             const base64Image = event.target.result.split(',')[1];
@@ -219,17 +273,36 @@ function App() {
               content: '📷 Image pasted (screenshot or clipboard)',
               timestamp: new Date().toISOString(),
             });
+            if (!isLikelyVisionModelName(modelName)) {
+              addMessage({
+                role: 'system',
+                content:
+                  `⚠️ Current model "${modelName}" may not support image understanding. ` +
+                  'If it says no image is attached, switch to a vision model (e.g. llava, llama3.2-vision, qwen2.5-vl).',
+                timestamp: new Date().toISOString(),
+              });
+            }
+            setPendingUploadCount((c) => Math.max(0, c - 1));
+          };
+          reader.onerror = () => {
+            addMessage({
+              role: 'system',
+              content: '❌ Failed to read pasted image',
+              timestamp: new Date().toISOString(),
+            });
+            setPendingUploadCount((c) => Math.max(0, c - 1));
           };
           reader.readAsDataURL(file);
           return;
         }
       }
     },
-    [addMessage]
+    [addMessage, modelName]
   );
 
   const hasUploads = uploadedFiles.length > 0 || uploadedImages.length > 0;
   const totalUploads = uploadedFiles.length + uploadedImages.length;
+  const isUploadProcessing = pendingUploadCount > 0;
 
   return (
     <div className="App" onPasteCapture={handlePaste}>
@@ -286,6 +359,7 @@ function App() {
             onKeyPress={handleKeyPress}
             onSend={sendMessage}
             isLoading={isLoading}
+            isUploadProcessing={isUploadProcessing}
           />
         </div>
       </div>
